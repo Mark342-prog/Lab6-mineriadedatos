@@ -1,0 +1,185 @@
+---
+title: "Laboratorio 6 - K Nearest Neighbors (KNN)"
+author: "Grupo \\#8  \nOsman Emanuel de León García - 23428  \nMaría José Yee Vidal - 231193  \nAndrés Rafael Chivalán Marroquín - 21534\n"
+date: "2026-04-10"
+output:
+  pdf_document:
+    latex_engine: xelatex
+  html_document:
+    df_print: paged
+    toc: true
+    toc_float: true
+---
+
+```{r setup, message=FALSE, warning=FALSE}
+rm(list = ls())
+
+load("Data/listings.RData")
+
+library(dplyr)
+library(caret)
+
+# Limpiar columna price
+listings$price <- gsub("\\$", "", listings$price)
+listings$price <- gsub(",", "", listings$price)
+listings$price <- as.numeric(listings$price)
+listings <- listings[!is.na(listings$price), ]
+
+# Variables seleccionadas (mismas que Lab 5)
+features <- c(
+  "accommodates", "bathrooms", "bedrooms", "beds",
+  "minimum_nights", "maximum_nights", "availability_365",
+  "number_of_reviews", "review_scores_rating"
+)
+
+listings_model <- listings %>%
+  select(price, all_of(features)) %>%
+  na.omit()
+
+# Variable categórica por cuantiles (misma definición que Lab 5)
+listings_model$price_cat <- cut(
+  listings_model$price,
+  breaks = quantile(listings_model$price, probs = c(0, 0.33, 0.66, 1)),
+  labels = c("barata", "media", "cara"),
+  include.lowest = TRUE
+)
+
+# Split 70/30 - mismo seed que Lab 5
+set.seed(123)
+trainIndex <- createDataPartition(listings_model$price, p = 0.7, list = FALSE)
+train <- listings_model[trainIndex, ]
+test  <- listings_model[-trainIndex, ]
+
+cat("Train:", nrow(train), "| Test:", nrow(test), "\n")
+```
+
+## Preparación y contexto
+
+Esta entrega continúa la consultoría para SmartStay Advisors. Se implementan modelos de K Nearest Neighbors (KNN) tanto para regresión como para clasificación del precio de propiedades Airbnb.
+
+Para mantener comparabilidad con el laboratorio anterior (Lab 5 - Naive Bayes), se conservan las mismas condiciones: `set.seed(123)`, split 70/30, las mismas nueve variables predictoras y los mismos cortes de cuantiles para `price_cat`. KNN basa sus predicciones en distancias entre observaciones, por lo que es imprescindible normalizar las variables antes de entrenar — sin normalización, las variables con mayor rango numérico (como `maximum_nights`) dominarían artificialmente el cálculo de distancias.
+
+---
+
+## Modelo KNN de Regresión
+
+KNN para regresión predice el precio de una propiedad calculando el promedio de los precios de sus *k* vecinos más cercanos en el espacio de características. A diferencia de modelos paramétricos como la regresión lineal, no asume ninguna forma funcional sobre los datos, lo que lo hace flexible pero también sensible a la escala de las variables y a la heterogeneidad de precios en el dataset.
+
+```{r knn-regresion, warning=FALSE}
+# Normalización min-max sobre el conjunto de entrenamiento
+preproc      <- preProcess(train[, features], method = "range")
+train_scaled <- predict(preproc, train[, features])
+test_scaled  <- predict(preproc, test[, features])
+
+train_scaled$price <- train$price
+test_scaled$price  <- test$price
+
+# Modelo KNN de regresión con k=7
+set.seed(123)
+modelo_knn_reg <- train(
+  price ~ .,
+  data      = train_scaled,
+  method    = "knn",
+  tuneGrid  = data.frame(k = 7),
+  trControl = trainControl(method = "none")
+)
+
+pred_knn_reg <- predict(modelo_knn_reg, newdata = test_scaled)
+
+rmse_knn <- RMSE(pred_knn_reg, test$price)
+mae_knn  <- MAE(pred_knn_reg, test$price)
+r2_knn   <- R2(pred_knn_reg, test$price)
+
+cat("RMSE:", round(rmse_knn, 3), "\n")
+cat("MAE: ", round(mae_knn, 3), "\n")
+cat("R²:  ", round(r2_knn, 4), "\n")
+```
+
+### Análisis del modelo de regresión
+
+Las métricas elegidas son RMSE, MAE y R², las mismas del Lab 5, lo que permite comparación directa entre algoritmos.
+
+El **RMSE** penaliza errores grandes de forma cuadrática, relevante aquí porque una predicción de precio muy alejada del real tendría consecuencias directas para SmartStay al recomendar propiedades. El **MAE** es más interpretable en términos de negocio: cuántos dólares se equivoca el modelo en promedio. El **R²** indica qué proporción de la variabilidad del precio logra capturar el modelo.
+
+KNN tiene ventaja sobre Naive Bayes para regresión porque puede capturar patrones locales en el espacio de características, en lugar de asumir distribuciones de probabilidad independientes. Sin embargo, el dataset de Airbnb tiene precios muy heterogéneos, lo que puede dificultar encontrar vecinos realmente comparables para propiedades en los extremos del rango de precios.
+
+---
+
+## Comparación con modelos de regresión anteriores
+
+La siguiente tabla consolida los resultados de regresión de todas las entregas. Es importante señalar que los Labs 3 y 4 usaron `log_price` como variable respuesta con un split 80/20 y `set.seed(42)`, mientras que a partir del Lab 5 se trabaja con `price` directo y split 70/30 con `set.seed(123)`. Por eso, las métricas no son directamente comparables en magnitud entre ambos grupos, y se indica la escala en la tabla.
+
+```{r tabla-comparacion-regresion, warning=FALSE}
+tabla_reg <- data.frame(
+  Modelo = c(
+    "Reg. Lineal Depurada (Lab 3)",
+    "Árbol de Regresión (Lab 4)",
+    "Naive Bayes (Lab 5)",
+    "KNN k=7 (Lab 6)"
+  ),
+  Escala_respuesta = c("log_price", "log_price", "price", "price"),
+  RMSE = c(0.5172, NA, 2816.215, round(rmse_knn, 3)),
+  MAE  = c(NA,     NA, 957.950,  round(mae_knn, 3)),
+  R2   = c(0.4096, NA, 0.0028,   round(r2_knn, 4))
+)
+
+# Los NA del árbol de regresión (Lab 4) deben completarse con
+# los valores exactos del output de ese laboratorio.
+print(tabla_reg)
+```
+
+> **Nota:** Completar los valores del Árbol de Regresión (Lab 4) con los resultados impresos al correr ese notebook. Los valores de Labs 3 y 4 están en escala logarítmica, por lo que un RMSE de 0.51 en log_price equivale a un error multiplicativo en la escala original, no a $0.51.
+
+El modelo de Naive Bayes del Lab 5 mostró un R² de 0.0028, prácticamente nulo, lo que confirma que ese algoritmo no es adecuado para regresión continua. KNN al ser un método basado en instancias debería mejorar esa capacidad predictiva al no imponer supuestos distribucionales sobre los datos.
+
+---
+
+## Modelo KNN de Clasificación
+
+Para clasificación, KNN asigna a cada observación la clase más frecuente entre sus *k* vecinos más cercanos. Se usa la misma variable `price_cat` (barata / media / cara) definida por los percentiles 33 y 66. La variable `price` numérica se excluye de los predictores para evitar fuga de datos, ya que `price_cat` se deriva directamente de ella.
+
+```{r knn-clasificacion, warning=FALSE}
+# Datos de clasificación: solo features + price_cat
+train_cat <- train[, c(features, "price_cat")]
+test_cat  <- test[, c(features, "price_cat")]
+
+# Normalización
+preproc_cat          <- preProcess(train_cat[, features], method = "range")
+train_cat_sc         <- predict(preproc_cat, train_cat[, features])
+test_cat_sc          <- predict(preproc_cat, test_cat[, features])
+train_cat_sc$price_cat <- train_cat$price_cat
+test_cat_sc$price_cat  <- test_cat$price_cat
+
+# Modelo KNN clasificación con k=7
+set.seed(123)
+modelo_knn_class <- train(
+  price_cat ~ .,
+  data      = train_cat_sc,
+  method    = "knn",
+  tuneGrid  = data.frame(k = 7),
+  trControl = trainControl(method = "none")
+)
+
+pred_knn_class <- predict(modelo_knn_class, newdata = test_cat_sc)
+```
+
+---
+
+## Eficiencia del modelo de clasificación
+
+```{r eficiencia-clasificacion, warning=FALSE}
+conf_knn <- confusionMatrix(pred_knn_class, test_cat$price_cat)
+conf_knn
+```
+
+### Interpretación de los resultados
+
+La matriz de confusión muestra el desempeño del clasificador KNN en las tres categorías. Se analizan tres aspectos relevantes para el negocio:
+
+**Aciertos:** La clase "barata" tiende a ser la más fácil de identificar correctamente porque sus propiedades tienen características más distintas: menor capacidad, menos habitaciones y precios más alejados del rango central.
+
+**Errores más frecuentes:** La confusión entre "media" y "cara" es la más común en este tipo de problema, ya que ambas clases comparten rangos de precio contiguos y características físicas similares. Este patrón ya se observó en el Lab 5 con Naive Bayes.
+
+**Impacto de los errores:** Para SmartStay, el error más costoso sería clasificar una propiedad "cara" como "barata" (o viceversa), ya que llevaría a recomendaciones de precio completamente fuera de mercado. Los errores entre categorías adyacentes son menos críticos porque la diferencia de precio real es menor.
+
+En la entrega final se realizará la comparación completa de accuracy con Naive Bayes (~84%), Árbol de Decisión (~61%) y Random Forest (~66%), junto con validación cruzada y tuneo de hiperparámetros para determinar el mejor valor de *k* y la métrica de distancia óptima.
