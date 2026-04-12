@@ -183,3 +183,132 @@ La matriz de confusión muestra el desempeño del clasificador KNN en las tres c
 **Impacto de los errores:** Para SmartStay, el error más costoso sería clasificar una propiedad "cara" como "barata" (o viceversa), ya que llevaría a recomendaciones de precio completamente fuera de mercado. Los errores entre categorías adyacentes son menos críticos porque la diferencia de precio real es menor.
 
 En la entrega final se realizará la comparación completa de accuracy con Naive Bayes (~84%), Árbol de Decisión (~61%) y Random Forest (~66%), junto con validación cruzada y tuneo de hiperparámetros para determinar el mejor valor de *k* y la métrica de distancia óptima.
+
+
+```{r, warning=FALSE}
+conf_knn$overall['Accuracy']
+```
+
+El modelo obtuvo una accuracy de 0.5917, lo que indica que aproximadamente el 59.17% de las predicciones fueron correctas. Este valor sugiere un desempeño moderado, apenas por encima de una clasificación aleatoria (que sería cercana al 33% en tres clases balanceadas).
+
+En cuanto al comportamiento del modelo:
+
+Mayor efectividad:
+El modelo tiende a clasificar mejor la categoría "barata", ya que estas propiedades suelen tener características más diferenciadas respecto a las demás.
+Errores más frecuentes:
+La mayor cantidad de errores ocurre entre las categorías "media" y "cara", lo cual es esperable debido a que ambas presentan rangos de precio cercanos y características similares.
+Errores menos frecuentes:
+Es menos común que el modelo confunda propiedades "barata" con "cara", ya que representan extremos del rango de precios y son más fáciles de distinguir.
+
+#### Importancia de los errores
+
+Desde la perspectiva del negocio:
+
+El error más crítico es clasificar una propiedad cara como barata (o viceversa), ya que implicaría recomendaciones de precios completamente fuera de mercado.
+Los errores entre categorías adyacentes (media–cara o media–barata) son menos graves, ya que la diferencia de precio es menor.
+
+### Sobreajuste
+
+El modelo KNN implementado con𝑘= 7 no muestra evidencia clara de sobreajuste, pero sí presenta señales de bajo poder predictivo (posible subajuste).
+
+```{r, warning=FALSE}
+set.seed(123)
+
+control_cv <- trainControl(method = "cv", number = 5)
+
+modelo_knn_cv <- train(
+  price_cat ~ .,
+  data      = train_cat_sc,
+  method    = "knn",
+  tuneGrid  = data.frame(k = seq(3, 15, 2)),
+  trControl = control_cv
+)
+
+pred_knn_cv <- predict(modelo_knn_cv, newdata = test_cat_sc)
+
+conf_knn_cv <- confusionMatrix(pred_knn_cv, test_cat$price_cat)
+
+conf_knn_cv
+
+modelo_knn_cv$bestTune
+conf_knn_cv$overall['Accuracy']
+
+
+```
+Para mejorar la robustez del modelo, se implementó validación cruzada de 5 folds, probando distintos valores del hiperparámetro k. Este enfoque permite evaluar el modelo en múltiples particiones del conjunto de entrenamiento y seleccionar el valor de k que maximiza el desempeño.
+
+El modelo seleccionó como mejor valor: k=15
+Al evaluar este modelo sobre el conjunto de prueba, se obtuvo un accuracy de 60.19%, ligeramente superior al modelo original.
+
+#### Comparación de resultados
+Modelo original (k = 7):
+Accuracy = 59.17%
+Modelo con validación cruzada (k = 15):
+Accuracy = 60.19%
+#### Interpretación
+
+El modelo con validación cruzada muestra una mejora leve pero consistente en el desempeño. Este resultado es importante porque:
+
+Un valor mayor de k (15 vs 7) implica:
+- Menor sensibilidad al ruido
+- Fronteras de decisión más suaves
+- Mejor capacidad de generalización
+- La mejora en accuracy, aunque no muy grande (~1%), indica que:
+- El modelo original no estaba óptimamente calibrado
+- La selección automática de hiperparámetros aporta valor
+
+Además, el desempeño por clase muestra que:
+
+Las clases "barata" y "cara" mantienen buenas tasas de detección
+La clase "media" sigue siendo la más difícil de clasificar (menor sensibilidad), lo que confirma el solapamiento entre categorías intermedias
+
+
+### Tanto para los modelos de regresión como de clasificación, pruebe con varios valores de los hiperparámetros 
+
+En KNN, el principal hiperparámetro a ajustar es:
+k
+También pueden ajustarse la métrica de distancia y la ponderación, aunque en este caso se trabajó con la configuración por defecto.
+
+Para clasificación, el tuneo mediante validación cruzada seleccionó k=15, mejorando el accuracy de 59.17% a 60.19%.
+Esto indica una leve mejora, logrando un modelo más estable y con mejor capacidad de generalización.
+
+Sin embargo, el incremento es pequeño, lo que sugiere que las limitaciones del modelo se deben más al solapamiento de las clases que al valor de k.
+
+```{r, warning=FALSE}
+set.seed(123)
+
+control_cv <- trainControl(method = "cv", number = 5)
+
+modelo_knn_reg_tuned <- train(
+  price ~ .,
+  data      = train_scaled,
+  method    = "knn",
+  tuneGrid  = data.frame(k = seq(3, 15, 2)),
+  trControl = control_cv
+)
+
+modelo_knn_reg_tuned$bestTune
+
+pred_knn_reg_tuned <- predict(modelo_knn_reg_tuned, newdata = test_scaled)
+
+rmse_knn_tuned <- RMSE(pred_knn_reg_tuned, test$price)
+mae_knn_tuned  <- MAE(pred_knn_reg_tuned, test$price)
+r2_knn_tuned   <- R2(pred_knn_reg_tuned, test$price)
+
+cat("RMSE:", rmse_knn_tuned, "\n")
+cat("MAE: ", mae_knn_tuned, "\n")
+cat("R²:  ", r2_knn_tuned, "\n")
+```
+
+El modelo KNN de regresión mejoró tras el ajuste de hiperparámetros, evidenciado por:
+
+Un RMSE más bajo, lo que indica menor error en las predicciones
+Un R² mayor, mostrando mejor capacidad para explicar la variabilidad del precio
+
+Esto confirma que la selección adecuada de 
+𝑘
+k permite mejorar el desempeño del modelo.
+
+Sin embargo, el valor de R² sigue siendo relativamente bajo, lo que sugiere que KNN tiene limitaciones para capturar completamente la variabilidad del precio en este dataset.
+
+En conclusión, el tuneo de hiperparámetros mejora el modelo, pero no es suficiente para lograr un alto poder predictivo, por lo que podrían explorarse modelos más robustos.
