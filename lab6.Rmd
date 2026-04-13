@@ -209,7 +209,7 @@ Los errores entre categorías adyacentes (media–cara o media–barata) son men
 
 ### Sobreajuste
 
-El modelo KNN implementado con𝑘= 7 no muestra evidencia clara de sobreajuste, pero sí presenta señales de bajo poder predictivo (posible subajuste).
+El modelo KNN implementado con k = 7 no muestra evidencia clara de sobreajuste, pero sí presenta señales de bajo poder predictivo (posible subajuste).
 
 ```{r, warning=FALSE}
 set.seed(123)
@@ -299,16 +299,77 @@ cat("RMSE:", rmse_knn_tuned, "\n")
 cat("MAE: ", mae_knn_tuned, "\n")
 cat("R²:  ", r2_knn_tuned, "\n")
 ```
+### Análisis del ajuste de hiperparámetros
 
-El modelo KNN de regresión mejoró tras el ajuste de hiperparámetros, evidenciado por:
+En el caso de clasificación, la validación cruzada permitió seleccionar un mejor valor del hiperparámetro k.
 
-Un RMSE más bajo, lo que indica menor error en las predicciones
-Un R² mayor, mostrando mejor capacidad para explicar la variabilidad del precio
+- Modelo original: k = 7 → Accuracy = 59.17%
+- Modelo optimizado: k = 15 → Accuracy = 60.19%
 
-Esto confirma que la selección adecuada de 
-𝑘
-k permite mejorar el desempeño del modelo.
+Esto indica que un mayor número de vecinos reduce la sensibilidad al ruido y mejora la capacidad de generalización del modelo. Sin embargo, la mejora es moderada (~1%), lo que sugiere que el principal problema del modelo no es el valor de k, sino el solapamiento entre las clases, especialmente entre "media" y "cara".
 
-Sin embargo, el valor de R² sigue siendo relativamente bajo, lo que sugiere que KNN tiene limitaciones para capturar completamente la variabilidad del precio en este dataset.
+En el caso de regresión, el ajuste de hiperparámetros no produjo mejoras significativas:
 
-En conclusión, el tuneo de hiperparámetros mejora el modelo, pero no es suficiente para lograr un alto poder predictivo, por lo que podrían explorarse modelos más robustos.
+- RMSE: se mantiene en 2516.127
+- MAE: se mantiene en 331.416
+- R²: se mantiene alrededor de 0.157
+
+Esto indica que el modelo KNN ya se encontraba en una zona estable y que variar el valor de k no impacta significativamente su desempeño. Esto sugiere que KNN tiene limitaciones para captar la variabilidad del precio en este dataset.
+
+### Métrica de distancia y valor de p
+
+En este modelo se utilizó la configuración por defecto del algoritmo KNN en la librería `caret`, la cual emplea la distancia euclidiana.
+
+La distancia euclidiana corresponde a un valor de \( p = 2 \) en la distancia de Minkowski.
+
+Esta métrica es adecuada para este problema porque:
+
+- Las variables fueron previamente normalizadas, evitando que alguna domine la distancia
+- Se busca medir similitud global entre propiedades considerando todas las características
+- Es la métrica más estable y comúnmente utilizada en KNN
+
+No se probaron otros valores de \( p \) (como Manhattan, \( p = 1 \)), pero podrían explorarse en futuros análisis para evaluar si mejoran la separación entre las clases.
+
+La distancia euclidiana resulta suficiente, ya que el desempeño del modelo no parece estar limitado por la métrica de distancia, sino por el solapamiento de las clases.
+
+
+
+
+
+## Comparación final de modelos
+
+Se comparó el desempeño del modelo KNN con los algoritmos utilizados en entregas anteriores para clasificación:
+
+| Modelo                    | Accuracy |
+|---------------------------|---------|
+| Naive Bayes (Lab 5)       | ~84%    |
+| Random Forest (Lab 4)     | ~66%    |
+| Árbol de decisión (Lab 4) | ~61%    |
+| KNN (k = 15)              | 60.19%  |
+
+### Interpretación
+
+El modelo KNN presenta un desempeño inferior a Naive Bayes y Random Forest, y similar al árbol de decisión.
+
+Esto se debe a que:
+
+- KNN depende fuertemente de la distancia entre observaciones  
+- Existe solapamiento entre clases ("media" y "cara")  
+- No hay una separación clara en el espacio de características  
+
+### Tiempo de procesamiento
+
+KNN es un algoritmo basado en instancias, lo que implica que:
+
+- No realiza un entrenamiento costoso  
+- Pero sí requiere mayor tiempo en predicción, ya que calcula distancias contra todos los puntos de entrenamiento  
+
+En contraste:
+
+- Random Forest y Naive Bayes son más eficientes en predicción una vez entrenados  
+
+### Conclusión final
+
+El mejor modelo de clasificación sigue siendo **Naive Bayes**, seguido por **Random Forest**.
+
+KNN, aunque intuitivo y fácil de implementar, no logra superar el desempeño de estos modelos en este problema, debido a la estructura de los datos y la superposición entre clases.
